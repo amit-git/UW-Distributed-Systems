@@ -4,6 +4,14 @@ import "os"
 import "fmt"
 import "mapreduce"
 import "container/list"
+import "strings"
+import "strconv"
+import "regexp"
+
+var wordRegExp, _ = regexp.Compile("[,;.\"'-]+")
+var punctReplacer = strings.NewReplacer(",", "", ".", "", ";", "", "-", "", "'", "",
+	"\"", "", "*", "", "=", "", ">", "", "<", "",
+	"(", "", ")", "", ":", "", "!", "", "?", "")
 
 // our simplified version of MapReduce does not supply a
 // key to the Map function, as in the paper; only a value,
@@ -13,7 +21,13 @@ func Map(value string) *list.List {
 	// You need to:
 	// (1) Split up the string into words, discarding any punctuation
 	// (2) Add each word to the list with a mapreduce.KeyValue struct
-
+	s := punctReplacer.Replace(value)
+	words := strings.Fields(s)
+	wordList := list.New()
+	for _, w := range words {
+		wordList.PushBack(mapreduce.KeyValue{Key: w, Value: "1"})
+	}
+	return wordList
 }
 
 // iterate over list and add values
@@ -24,6 +38,14 @@ func Reduce(key string, values *list.List) string {
 	// You need to:
 	// (1) Reduce the all of the values in the values list
 	// (2) Return the reduced/summed up values as a string
+	var sum = 0
+	for e := values.Front(); e != nil; e = e.Next() {
+		iValue, err := strconv.Atoi(e.Value.(string))
+		if err == nil {
+			sum += iValue
+		}
+	}
+	return strconv.Itoa(sum)
 }
 
 // Can be run in 3 ways:
