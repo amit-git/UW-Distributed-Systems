@@ -28,34 +28,51 @@ func (mr *MapReduce) KillWorkers() *list.List {
 }
 
 func (mr *MapReduce) RunMaster() *list.List {
-	// Your code here
 	go func() {
-		workerAddress := <-mr.registerChannel
-		worker := &WorkerInfo{address: workerAddress, lastWorkFinished: true}
-		mr.Workers[workerAddress] = worker
-		mr.readyWorkersChan <- worker
+		for {
+			workerAddress := <-mr.registerChannel
+			worker := &WorkerInfo{address: workerAddress, lastWorkFinished: true}
+			mr.Workers[workerAddress] = worker
+			fmt.Printf("Registered worker %v\n", worker.address)
+			mr.readyWorkersChan <- worker
+		}
 	}()
 
-	for i := 0; i < mr.nMap; i++ {
+	for i := 0; i < mr.nMap; {
+		fmt.Printf("Waiting for ready worker\n")
 		w := <-mr.readyWorkersChan
-		go func(jobNum int) {
+		if !w.lastWorkFinished {
+			i--
+			continue
+		}
+
+		fmt.Printf("Ready worker %v\n", w.address)
+		go func(jobNum int, worker *WorkerInfo) {
 			args := &DoJobArgs{File: mr.file, Operation: Map, JobNumber: jobNum, NumOtherPhase: mr.nReduce}
 			var reply DoJobReply
-			ok := call(w.address, "Worker.DoJob", args, &reply)
-			w.lastWorkFinished = ok && reply.OK
-			mr.readyWorkersChan <- w
-		}(i)
+			ok := call(worker.address, "Worker.DoJob", args, &reply)
+			worker.lastWorkFinished = ok && reply.OK
+			mr.readyWorkersChan <- worker
+		}(i, w)
+		i++
 	}
 
-	for j := 0; j < mr.nReduce; j++ {
+	for j := 0; j < mr.nReduce; {
 		w := <-mr.readyWorkersChan
-		go func(jobNum int) {
+		if !w.lastWorkFinished {
+			j--
+			continue
+		}
+
+		fmt.Printf("Submitting REDUCE #%v/%v\n", j, mr.nReduce)
+		go func(jobNum int, worker *WorkerInfo) {
 			args := &DoJobArgs{File: mr.file, Operation: Reduce, JobNumber: jobNum, NumOtherPhase: mr.nMap}
 			var reply DoJobReply
-			ok := call(w.address, "Worker.DoJob", args, &reply)
-			w.lastWorkFinished = ok && reply.OK
-			mr.readyWorkersChan <- w
-		}(j)
+			ok := call(worker.address, "Worker.DoJob", args, &reply)
+			worker.lastWorkFinished = ok && reply.OK
+			mr.readyWorkersChan <- worker
+		}(j, w)
+		j++
 	}
 	return mr.KillWorkers()
 }
