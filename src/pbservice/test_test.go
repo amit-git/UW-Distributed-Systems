@@ -75,6 +75,7 @@ func TestBasicFail(t *testing.T) {
 		time.Sleep(viewservice.PingInterval)
 	}
 	v, _ := vck.Get()
+	fmt.Printf("Just before test fails %v\n", v)
 	if v.Backup != s2.me {
 		t.Fatal("backup never came up")
 	}
@@ -174,8 +175,11 @@ func TestAtMostOnce(t *testing.T) {
 	k := "counter"
 	val := ""
 	for i := 0; i < 100; i++ {
+		fmt.Printf("Iteration %v\n",i)
 		v := strconv.Itoa(i)
+		fmt.Printf("Before PutHash\n")
 		pv := ck.PutHash(k, v)
+		fmt.Printf("After PutHash\n")
 		if pv != val {
 			t.Fatalf("ck.Puthash() returned %v but expected %v\n", pv, val)
 		}
