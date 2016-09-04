@@ -13,6 +13,7 @@ import "sync"
 
 import (
 	"strconv"
+	"errors"
 )
 
 // Debugging
@@ -38,30 +39,28 @@ type PBServer struct {
 	store                map[string]string
 	putRequestsProcessed map[int32]string // value is the previous PUT value
 	getRequestsProcessed map[int32]bool
-	lock *sync.Mutex
+	lock                 *sync.Mutex
 }
 
 func (pb *PBServer) Put(args *PutArgs, reply *PutReply) error {
 	// Your code here.
 	pb.lock.Lock()
 	defer pb.lock.Unlock()
+
+	if pb.view.Primary != pb.me || pb.dead {
+		log.Printf("Rejecting PUT - %v Not a primary", pb.me)
+		// not a primary
+		reply.Err = "IllegalStateException"
+		return errors.New("IllegalStateException")
+	}
+
+	//fmt.Printf("Serving PUT %v\n", args)
+
 	if pb.putRequestsProcessed[args.PutId] != "" {
 		reply.PreviousValue = pb.putRequestsProcessed[args.PutId]
 		return nil
 	}
-
-	//log.Printf("MY VIEW %v\n", pb.view)
-	log.Printf("Serving PUT %v\n", args)
-
-	if pb.view.Backup == pb.me {
-		log.Printf("Rejecting PUT - %v Not a primary", pb.me)
-		// not a primary
-		reply.Err = "IllegalStateException"
-		return nil
-	}
-
 	reply.PreviousValue = pb.store[args.Key]
-
 	if args.DoHash {
 		pb.store[args.Key] = strconv.Itoa(int(hash(pb.store[args.Key] + args.Value)))
 	} else {
@@ -83,22 +82,24 @@ func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
 	pb.lock.Lock()
 	defer pb.lock.Unlock()
 
+	fmt.Printf("Get on %v for %v (primary = %v) \n", pb.me, args.Key, pb.view.Primary)
+	if pb.view.Primary != pb.me || pb.dead {
+		log.Printf("Rejecting GET - %v Not a primary", pb.me)
+		// not a primary
+		reply.Err = "IllegalStateException"
+		return errors.New("IllegalStateException")
+	}
+
 	if pb.getRequestsProcessed[args.GetId] {
 		reply.Value = pb.store[args.Key]
 		return nil
 	}
 	// log.Printf("GET %v\n", args)
-	if pb.view.Backup == pb.me {
-		log.Printf("Rejecting GET - %v Not a primary", pb.me)
-		// not a primary
-		reply.Err = "IllegalStateException"
-		return nil
-	}
 
 	if pb.store[args.Key] != "" {
 		reply.Value = pb.store[args.Key]
 	} else {
-		reply.Err = "404"
+		reply.Value = ""
 	}
 	pb.getRequestsProcessed[args.GetId] = true
 	return nil
@@ -110,11 +111,12 @@ func (pb *PBServer) tick() {
 	//log.Printf("TICK %v\n", pb.me)
 	view, err := pb.vs.Ping(pb.view.Viewnum)
 	if err == nil {
-		if view.Primary == pb.me && pb.view.Backup == "" && view.Backup != "" {
+		pb.lock.Lock()
+		defer pb.lock.Unlock()
+		if view.Primary == pb.me && pb.view.Backup != view.Backup {
 			// send entire store to Backup
-			pb.lock.Lock()
-			defer pb.lock.Unlock()
-			syncDBArgs := &SyncDBArgs{Store:pb.store,
+			syncDBArgs := &SyncDBArgs{View:view,
+				Store:pb.store,
 				GetRequestsProcessed:pb.getRequestsProcessed,
 				PutRequestsProcessed:pb.putRequestsProcessed}
 			syncDBReply := &SyncDBReply{}
@@ -141,9 +143,12 @@ func (pb *PBServer) SyncPut(args *SyncPutArgs, reply *SyncPutReply) error {
 	return nil
 }
 func (pb *PBServer) SyncDB(args *SyncDBArgs, reply *SyncDBReply) error {
-
+	fmt.Printf("SyncDB received at %v from %v ::: keys %v\n", pb.me, args.View.Primary, len(args.Store))
 	pb.lock.Lock()
 	defer pb.lock.Unlock()
+
+	pb.view = args.View
+
 	pb.store = make(map[string]string)
 	for k, v := range args.Store {
 		pb.store[k] = v
@@ -208,7 +213,6 @@ func StartServer(vshost string, me string) *PBServer {
 					pb.done.Add(1)
 					go func() {
 						rpcs.ServeConn(conn)
-						fmt.Println("Closing connection Here !!")
 						pb.done.Done()
 					}()
 				} else {

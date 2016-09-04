@@ -20,6 +20,7 @@ type ViewServer struct {
 	primaryPingTime   int64
 	backupPingTime    int64
 	primaryAckViewnum uint
+	idleServers []string
 }
 
 //
@@ -57,6 +58,17 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 				vs.nextView.Viewnum = vs.currentView.Viewnum + 1
 				vs.nextView.Backup = args.Me
 				vs.nextView.Primary = vs.currentView.Primary
+			} else {
+				// idle servers
+				idleServerAlreadyExist := false
+				for _,idleServer:= range vs.idleServers {
+					if idleServer == args.Me {
+						idleServerAlreadyExist = true
+					}
+				}
+				if !idleServerAlreadyExist {
+					vs.idleServers = append(vs.idleServers, args.Me)
+				}
 			}
 		}
 
@@ -108,7 +120,23 @@ func (vs *ViewServer) tick() {
 			log.Printf("Making backup -> primary %v\n", vs.currentView.Backup)
 			currentPrimary := vs.currentView.Primary
 			vs.currentView.Primary = vs.currentView.Backup
-			vs.currentView.Backup = currentPrimary
+			if len(vs.idleServers) > 0 {
+				var idleServers []string
+				for _,idleServer := range vs.idleServers {
+					if idleServer != currentPrimary && idleServer != vs.currentView.Backup {
+						idleServers = append(idleServers, idleServer)
+					}
+				}
+				vs.idleServers = idleServers
+				// pick one idle server
+				if len(idleServers) > 0 {
+					vs.currentView.Backup, vs.idleServers = idleServers[0], idleServers[1:len(idleServers)]
+				} else {
+					vs.currentView.Backup = ""
+				}
+			} else {
+				vs.currentView.Backup = ""
+			}
 			vs.currentView.Viewnum += 1
 		}
 	}
@@ -130,6 +158,7 @@ func StartServer(me string) *ViewServer {
 	// Your vs.* initializations here.
 	vs.currentView = &View{Viewnum: 0}
 	vs.nextView = &View{Viewnum: 0}
+	vs.idleServers = make([]string, 0)
 
 	// tell net/rpc about our RPC server and handlers.
 	rpcs := rpc.NewServer()

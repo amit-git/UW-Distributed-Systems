@@ -3,7 +3,6 @@ package pbservice
 import "viewservice"
 import "net/rpc"
 import (
-	"fmt"
 	"math/rand"
 	"time"
 )
@@ -53,7 +52,7 @@ func call(srv string, rpcname string, args interface{}, reply interface{}) bool 
 		return true
 	}
 
-	fmt.Println("CALL ERROR " + err.Error())
+	//fmt.Println("CALL ERROR " + err.Error())
 	return false
 }
 
@@ -74,7 +73,7 @@ func (ck *Clerk) Get(key string) string {
 	keepGoing := true
 	for keepGoing {
 		if call(primary, "PBServer.Get", getArgs, getReply) {
-			if getReply.Err == "" || getReply.Err == "404" {
+			if getReply.Err == "" {
 				keepGoing = false
 			}
 		}
@@ -94,7 +93,7 @@ func (ck *Clerk) PutExt(key string, value string, dohash bool) string {
 	keepGoing := true
 	for keepGoing {
 		primary := ck.vs.Primary()
-		fmt.Printf("Calling PUT -> %v :: %v\n", primary, putArgs)
+		//fmt.Printf("Calling PUT -> %v :: %v\n", primary, putArgs)
 		callOk := call(primary, "PBServer.Put", putArgs, putReply)
 		if callOk && putReply.Err == "" {
 			keepGoing = false

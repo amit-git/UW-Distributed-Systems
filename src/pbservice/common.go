@@ -2,6 +2,7 @@ package pbservice
 
 import (
 	"hash/fnv"
+	"viewservice"
 )
 
 const (
@@ -33,6 +34,7 @@ type SyncPutReply struct {
 }
 
 type SyncDBArgs struct {
+	View viewservice.View
 	Store map[string]string
 	GetRequestsProcessed map[int32]bool
 	PutRequestsProcessed map[int32]string

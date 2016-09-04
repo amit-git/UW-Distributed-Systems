@@ -652,7 +652,7 @@ func TestRepeatedCrashUnreliable(t *testing.T) {
 			data := map[string]string{}
 			// rr := rand.New(rand.NewSource(int64(os.Getpid()+i)))
 			k := strconv.Itoa(i)
-			data[k] = ""
+			data[k] = ck.Get(k)
 			n := 0
 			for done == false {
 				v := strconv.Itoa(n)
